@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>AETERNA - Ascension Sombre</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; color: #a5a5a5; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; margin: 0 auto; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        .ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; text-transform: uppercase; letter-spacing: 2px; }
+        #chargeBar { width: 200px; height: 4px; background: #222; margin: 10px auto; position: relative; }
+        #chargeFill { height: 100%; width: 0%; background: #e74c3c; transition: width 0.1s; }
+        .height-indicator { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #444; }
+    </style>
+</head>
+<body>
+    <div class="ui">
+        <div id="chargeBar"><div id="chargeFill"></div></div>
+        <div id="status">L'ASCENSION COMMENCE</div>
+    </div>
+    <div class="height-indicator" id="heightDisp">ALTITUDE: 0m</div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const chargeFill = document.getElementById('chargeFill');
+const heightDisp = document.getElementById('heightDisp');
+
+const config = {
+    gravity: 0.28,
+    friction: 0.85,
+    bounce: 0.6, // Rebond sur les murs
+    walkSpeed: 2.8,
+    maxJumpForce: 16,
+    chargeRate: 0.22,
+    worldWidth: 500,
+    viewHeight: 700,
+    totalHeight: 5000 // Hauteur totale du niveau
+};
+
+canvas.width = config.worldWidth;
+canvas.height = config.viewHeight;
+
+let cameraY = config.totalHeight - config.viewHeight;
+
+let player = {
+    x: 240,
+    y: config.totalHeight - 100,
+    w: 24,
+    h: 32,
+    vx: 0,
+    vy: 0,
+    isGrounded: false,
+    charge: 0,
+    isCharging: false,
+    dir: 1,
+    maxHeightReached: 0
+};
+
+// --- LEVEL DESIGN VERTICAL ---
+const platforms = [
+    { x: 0, y: config.totalHeight - 40, w: 500, h: 40, type: 'stone' }, // Base
+    { x: 350, y: config.totalHeight - 180, w: 100, h: 15 },
+    { x: 50, y: config.totalHeight - 320, w: 120, h: 15 },
+    { x: 200, y: config.totalHeight - 450, w: 80, h: 15 },
+    { x: 400, y: config.totalHeight - 600, w: 60, h: 15 },
+    { x: 100, y: config.totalHeight - 750, w: 100, h: 15 },
+    { x: 250, y: config.totalHeight - 950, w: 40, h: 15 }, // Le saut de la foi
+    { x: 50, y: config.totalHeight - 1100, w: 150, h: 15 },
+    { x: 350, y: config.totalHeight - 1250, w: 100, h: 15 },
+    { x: 150, y: config.totalHeight - 1450, w: 60, h: 15 }
+];
+
+const keys = {};
+window.onkeydown = (e) => keys[e.code] = true;
+window.onkeyup = (e) => keys[e.code] = false;
+
+function update() {
+    // Déplacement
+    if (player.isGrounded && !player.isCharging) {
+        if (keys['ArrowLeft']) {
+            player.vx = -config.walkSpeed;
+            player.dir = -1;
+        } else if (keys['ArrowRight']) {
+            player.vx = config.walkSpeed;
+            player.dir = 1;
+        } else {
+            player.vx *= config.friction;
+        }
+    }
+
+    // Gestion du saut
+    if (keys['Space'] && player.isGrounded) {
+        player.isCharging = true;
+        player.vx = 0;
+        player.charge = Math.min(player.charge + config.chargeRate, config.maxJumpForce);
+    } else if (player.isCharging && !keys['Space']) {
+        // Jump Trigger
+        player.vy = -player.charge;
+        player.vx = player.dir * (player.charge * 0.45);
+        player.isGrounded = false;
+        player.isCharging = false;
+        player.charge = 0;
+    }
+
+    // Physique
+    player.vy += config.gravity;
+    player.x += player.vx;
+    player.y += player.vy;
+
+    // Collisions Murs avec Rebond
+    if (player.x < 0) { 
+        player.x = 0; 
+        player.vx *= -config.bounce; 
+    }
+    if (player.x + player.w > config.worldWidth) { 
+        player.x = config.worldWidth - player.w; 
+        player.vx *= -config.bounce; 
+    }
+
+    // Collisions Plateformes
+    let wasGrounded = player.isGrounded;
+    player.isGrounded = false;
+    platforms.forEach(p => {
+        if (player.vy >= 0 && 
+            player.y + player.h >= p.y && 
+            player.y + player.h <= p.y + p.h + 10 &&
+            player.x + player.w > p.x && 
+            player.x < p.x + p.w) {
+            
+            player.isGrounded = true;
+            player.y = p.y - player.h;
+            player.vy = 0;
+            player.vx = 0;
+        }
+    });
+
+    // Caméra de suivi (Verticale uniquement)
+    let targetCameraY = player.y - config.viewHeight * 0.6;
+    cameraY += (targetCameraY - cameraY) * 0.1;
+
+    // UI
+    chargeFill.style.width = (player.charge / config.maxJumpForce) * 100 + "%";
+    heightDisp.innerText = `ALTITUDE: ${Math.floor((config.totalHeight - player.y) / 10)}m`;
+}
+
+function draw() {
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(0, -cameraY);
+
+    // Dessiner Plateformes avec un look "brut"
+    platforms.forEach(p => {
+        ctx.fillStyle = "#1a1a1a";
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = "#333";
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+        
+        // Détail visuel
+        ctx.fillStyle = "#222";
+        ctx.fillRect(p.x, p.y, p.w, 4);
+    });
+
+    // Dessiner Joueur
+    let drawH = player.h;
+    let drawW = player.w;
+    let drawX = player.x;
+    let drawY = player.y;
+
+    if (player.isCharging) {
+        let squash = (player.charge / config.maxJumpForce) * 8;
+        drawH -= squash;
+        drawY += squash;
+        drawW += squash / 2;
+        drawX -= squash / 4;
+    }
+
+    // Corps
+    ctx.fillStyle = "#dcdcdc";
+    ctx.fillRect(drawX, drawY, drawW, drawH);
+    
+    // Yeux (direction)
+    ctx.fillStyle = "#000";
+    let eyeX = player.dir === 1 ? drawX + drawW - 8 : drawX + 4;
+    ctx.fillRect(eyeX, drawY + 8, 4, 4);
+
+    ctx.restore();
+
+    // Effet de grain cinématographique
+    if (Math.random() > 0.9) {
+        ctx.fillStyle = "rgba(255,255,255,0.02)";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
